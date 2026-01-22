@@ -1,0 +1,9 @@
+{
+  "block_name": "blocks",
+  "rules": [
+    { "policy": "keep", "match": ["0.img_attn.qkv", "0.txt_attn.qkv"] },
+    { "policy": "float8_e4m3fn",  "match": [] },
+    { "policy": "nvfp4","match": [ "img_attn", "img_mlp", "txt_attn", "txt_mlp", "linear" ] }
+  ],
+  "fp8_auto_fallback": { "enable": false }
+}

@@ -12,6 +12,11 @@ def record_amax_from_tensor(layer_name, quant_format, x):
     if not ENABLED or quant_format not in VALID_FORMATS or not layer_name:
         return
     with torch.no_grad():
+        x_fp32 = x.float()
+        if torch.isinf(x_fp32).any() or torch.isnan(x_fp32).any():
+            print(f"[CALIB_WARN] {layer_name}: Inf/NaN after fp32, skipping")
+            return
+
         amax = x.detach().abs().amax()
         prev = CALIB_AMAX.get(layer_name)
         if prev is None:
@@ -29,7 +34,7 @@ def dump(path: Optional[str] = None, clear: bool = False):
     items = {k: float(v.detach().cpu().item()) for k, v in sorted(CALIB_AMAX.items())}
     with open(path, "w", encoding="utf-8") as f:
         json.dump(items, f, ensure_ascii=False, indent=2)
-    #print(f"[CALIB_AMAX_DUMP] {len(items)} layers -> {path}")
+    print(f"[CALIB_AMAX_DUMP] {len(items)} layers -> {path}")
     if clear:
         CALIB_AMAX.clear()
 
