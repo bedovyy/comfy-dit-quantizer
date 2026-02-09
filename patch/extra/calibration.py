@@ -38,10 +38,11 @@ def get_timestep_bin(timestep, sigma_min, sigma_max, num_bins=6):
 
 def _compute_safe_stats(abs_x: torch.Tensor, sample_size=131_072) -> Dict[str, float]:
     numel = abs_x.numel()
+    amax = float(torch.amax(abs_x).item())
 
     if numel <= 524_288:
         return {
-            "amax": float(torch.amax(abs_x).item()),
+            "amax": amax,
             "p99_9": float(torch.quantile(abs_x, 0.999).item()),
             "std": float(abs_x.std().item()),
             "min": float(abs_x.min().item()),
@@ -55,12 +56,12 @@ def _compute_safe_stats(abs_x: torch.Tensor, sample_size=131_072) -> Dict[str, f
     sample = flat_x[indices]
 
     return {
-        "amax": float(torch.amax(flat_x).item()),  # amax는 전체 계산 (빠름)
+        "amax": amax,
         "p99_9": float(torch.quantile(sample, 0.999).item()),
         "std": float(sample.std().item()),
         "min": float(sample.min().item()),
         "max": float(sample.max().item()),
-        "count": numel / sample_size  # 가중치 보정
+        "count": 1,
     }
 
 def record_amax_from_tensor(layer_name, quant_format, x):
@@ -93,9 +94,11 @@ def record_amax_from_tensor(layer_name, quant_format, x):
             for k in stats:
                 if k in prev_stats:
                     if k == "count":
-                        stats[k] = max(stats[k], prev_stats[k])
-                    else:
                         stats[k] = prev_stats[k] + stats[k]
+                    elif k == "min":
+                        stats[k] = min(stats[k], prev_stats[k])
+                    else:
+                        stats[k] = max(stats[k], prev_stats[k])
         CALIB_DATA[key] = stats
 
 def dump(path: Optional[str] = None, clear: bool = False):

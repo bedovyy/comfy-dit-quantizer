@@ -1,0 +1,8 @@
+{
+  "block_names": ["layers"],
+  "rules": [
+    { "policy": "keep", "match": ["layers.0.", "layers.1.", "layers.2.", "layers.29."] },
+    { "policy": "float8_e4m3fn",  "match": ["layers.1", "layers.2"] },
+    { "policy": "nvfp4",  "match": [] }
+  ]
+}

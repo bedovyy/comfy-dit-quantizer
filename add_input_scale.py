@@ -12,10 +12,10 @@ def _quant_format_from_dtype(dt) -> str:
     s = str(dt).upper()
     if dt == torch.uint8 or s in ("U8", "UINT8"):
         return "nvfp4"
-    if dt == torch.float8_e4m3fn or "E4M3" in s:
-        return "float8_e4m3fn"
-    if dt == torch.float8_e5m2 or "E5M2" in s:
-        return "float8_e5m2"
+#    if dt == torch.float8_e4m3fn or "E4M3" in s:
+#        return "float8_e4m3fn"
+#    if dt == torch.float8_e5m2 or "E5M2" in s:
+#        return "float8_e5m2"
     return ""  # unsupported
 
 def _input_scale_from_format(qfmt: str, value: float) -> float:
@@ -53,11 +53,15 @@ def main():
     with safe_open(input_path, framework="pt") as f:
         metadata = dict(f.metadata() or {})
 
+
         for k in f.keys():
             out_tensors[k] = f.get_tensor(k)
 
         for layer_name, value in data.items():
+#            layer_name = "net." + layer_name # anime-preview
+
             weight_key = f"{layer_name}.weight"
+            
             dt = f.get_slice(weight_key).get_dtype()
 
             qfmt = _quant_format_from_dtype(dt)

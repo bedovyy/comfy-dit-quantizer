@@ -1,0 +1,10 @@
+{
+  "format": "comfy_quant",
+  "block_names": ["transformer_blocks"],
+  "rules": [
+    { "policy": "keep", "match": [] },
+    { "policy": "float8_e4m3fn",  "match": ["transformer_blocks"] },
+    { "policy": "nvfp4","match": ["attn"] }
+  ],
+  "float8_e4m3fn_auto_fallback": { "enable": false }
+}

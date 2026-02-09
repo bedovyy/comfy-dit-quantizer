@@ -1,16 +1,16 @@
 diff --git a/comfy/ops.py b/comfy/ops.py
-index e406ba7e..3cebfbf1 100644
+index 53c5e4dc..9e03e60d 100644
 --- a/comfy/ops.py
 +++ b/comfy/ops.py
-@@ -23,6 +23,7 @@ from comfy.cli_args import args, PerformanceFeature
- import comfy.float
- import comfy.rmsnorm
- import json
+@@ -26,6 +26,7 @@ import json
+ import comfy.memory_management
+ import comfy.pinned_memory
+ import comfy.utils
 +from extra.calibration import record_amax_from_tensor
  
- def run_every_op():
-     if torch.compiler.is_compiling():
-@@ -494,7 +495,6 @@ from .quant_ops import (
+ import comfy_aimdo.model_vbar
+ import comfy_aimdo.torch
+@@ -682,7 +683,6 @@ from .quant_ops import (
      get_layout_class,
  )
  
@@ -18,7 +18,7 @@ index e406ba7e..3cebfbf1 100644
  def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_precision_mm=False, disabled=[]):
      class MixedPrecisionOps(manual_cast):
          _quant_config = quant_config
-@@ -545,6 +545,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
+@@ -733,6 +733,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
  
                  device = self.factory_kwargs["device"]
                  layer_name = prefix.rstrip('.')
@@ -26,7 +26,7 @@ index e406ba7e..3cebfbf1 100644
                  weight_key = f"{prefix}weight"
                  weight = state_dict.pop(weight_key, None)
                  if weight is None:
-@@ -573,6 +574,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
+@@ -761,6 +762,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
  
                      qconfig = QUANT_ALGOS[self.quant_format]
                      self.layout_type = qconfig["comfy_tensor_layout"]
@@ -34,19 +34,19 @@ index e406ba7e..3cebfbf1 100644
                      layout_cls = get_layout_class(self.layout_type)
  
                      # Load format-specific parameters
-@@ -682,6 +684,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
+@@ -872,6 +874,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
                          scale = getattr(self, 'input_scale', None)
                          if scale is not None:
                              scale = comfy.model_management.cast_to_device(scale, input.device, None)
 +                        record_amax_from_tensor(self._layer_name, getattr(self, "quant_format", None), input_reshaped) # calib
                          input = QuantizedTensor.from_float(input_reshaped, self.layout_type, scale=scale)
  
-                 output = self.forward_comfy_cast_weights(input)
+ 
 diff --git a/comfy/samplers.py b/comfy/samplers.py
-index 1989ef10..02dbc9f2 100755
+index 8b978295..185e07bf 100755
 --- a/comfy/samplers.py
 +++ b/comfy/samplers.py
-@@ -214,6 +214,12 @@ def _calc_cond_batch_outer(model: BaseModel, conds: list[list[dict]], x_in: torc
+@@ -213,6 +213,12 @@ def _calc_cond_batch_outer(model: BaseModel, conds: list[list[dict]], x_in: torc
      return executor.execute(model, conds, x_in, timestep, model_options)
  
  def _calc_cond_batch(model: BaseModel, conds: list[list[dict]], x_in: torch.Tensor, timestep, model_options):

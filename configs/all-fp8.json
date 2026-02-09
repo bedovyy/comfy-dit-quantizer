@@ -1,0 +1,7 @@
+{
+  "block_names": [""],
+  "rules": [
+    { "policy": "float8_e4m3fn", "match": [""] },
+    { "policy": "nvfp4", "match": [""] }
+  ]
+}

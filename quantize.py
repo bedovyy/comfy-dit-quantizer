@@ -9,7 +9,7 @@ import utils
 from utils import print_layer_metrics, print_layer_header
 
 QUANTIZABLE_WEIGHT_DTYPES = (torch.bfloat16, torch.float16, torch.float32)
-ALLOWED_QTYPES = {"float8_e4m3fn", "nvfp4"}
+ALLOWED_QTYPES = {"float8_e4m3fn", "nvfp4", "mxfp8"}
 
 device = utils.get_device()
 
@@ -32,7 +32,7 @@ def parse_args():
     return p.parse_args()
 
 def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtype, qformat, method, n_samples, verbose=True):
-    layer_name = key.replace(".weight", "")
+    layer_name = key[:-7]
     
     if qtype == "nvfp4":
         if method == "mse":
@@ -45,6 +45,14 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale_2"] = weight_scale_2.cpu()
+    elif qtype == "mxfp8":
+        orig_dtype = weight.dtype
+        orig_shape = tuple(weight.shape)
+        weight_quantized, weight_scale = ck.quantize_mxfp8(weight)
+        if verbose: print(layer_name) # impl. later
+        quantized_state_dict[key] = weight_quantized.cpu()
+        quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
+
     else: # fp8
         if method == "mse":
             weight_scale = utils.scale_mse_fp8(weight, n_samples=n_samples)
@@ -55,19 +63,23 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
 
+    quant_info = { "format": qtype }
+    if qtype == "mxfp8":
+        quant_info = { "format": qtype, "orig_dtype": "torch.bfloat16", "orig_shape": orig_shape }
+
     if qformat == "comfy_quant":
         quantized_state_dict[f"{layer_name}.comfy_quant"] = torch.tensor(
-                list(json.dumps({"format": qtype}).encode("utf-8")), dtype=torch.uint8)
+                list(json.dumps(quant_info).encode("utf-8")), dtype=torch.uint8)
     else: # 1.0
-        quantization_layers[layer_name] = {"format": qtype}
+        quantization_layers[layer_name] = quant_info
 
 def store_with_optional_downcast(tensor, key, quantized_state_dict, cast_to, verbose=True):
     if tensor.dtype == torch.float32 and cast_to != None:
         casted_weight = tensor.to(dtype=cast_to)
         quantized_state_dict[key] = casted_weight.cpu()
 
-        if verbose and ".weight" in key:
-            layer_name = key.replace(".weight", "")
+        if verbose and key.endswith(".weight"):
+            layer_name = key[:-7]
             print_layer_metrics(layer_name, tensor, casted_weight)
     else:
         quantized_state_dict[key] = tensor.cpu()
@@ -108,11 +120,11 @@ def main():
             else:
                 quantize_weight(tensor.to(device), key, quantized_state_dict, quantization_layers, qtype, qformat, args.method, args.n_samples, verbose=not args.quiet)
 
-    metadata = (
-        {"_quantization_metadata": json.dumps({"format_version": "1.0", "layers": quantization_layers})}
-        if qformat != "comfy_quant" else None
-    )
     if not args.test:
+        metadata = (
+            {"_quantization_metadata": json.dumps({"format_version": "1.0", "layers": quantization_layers})}
+            if qformat != "comfy_quant" else None
+        )
         save_file(quantized_state_dict, args.dst, metadata=metadata)
         total_bytes = os.path.getsize(args.dst)
         print(f"Output: {args.dst} ({round(total_bytes / (1024**3), 2)}GB)")

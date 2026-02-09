@@ -1,0 +1,10 @@
+{
+  "format": "comfy_quant",
+  "block_names": ["."],
+  "rules": [
+    { "policy": "keep", "match": ["merger"] },
+    { "policy": "float8_e4m3fn",  "match": ["mlp"] },
+    { "policy": "nvfp4","match": ["attn"] }
+  ],
+  "float8_e4m3fn_auto_fallback": { "enable": false }
+}

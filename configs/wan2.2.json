@@ -1,8 +1,0 @@
-{
-  "block_names": ["blocks", "embedding", "projection", "head"],
-  "rules": [
-    { "policy": "keep", "match": ["blocks.0", "cross_attn.v"] },
-    { "policy": "float8_e4m3fn",  "match": ["cross_attn", "self_attn", "ffn", "embedding", "projection", "head"] },
-    { "policy": "nvfp4","match": [] }
-  ]
-}

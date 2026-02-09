@@ -1,0 +1,6 @@
+{
+  "block_names": [""],
+  "rules": [
+    { "policy": "nvfp4", "match": [""] }
+  ]
+}
