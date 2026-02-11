@@ -1,5 +1,6 @@
 import torch
 import comfy_kitchen as ck
+import utils
 
 def fixed_e(x, e=6, prec=4): return f"{x * (10**e):.{prec}f}e-{e}"
 
@@ -19,6 +20,9 @@ def get_metrics(original, quantized, global_scale=None, block_scales=None):
     elif quantized.dtype == torch.float8_e4m3fn:
         assert global_scale is not None, "fp8 requires global_scale"
         dequantized = ck.dequantize_per_tensor_fp8(quantized, global_scale, output_type=torch.float32) # fp8
+    elif quantized.dtype == torch.int8:
+        assert global_scale is not None, "int8 requires global_scale"
+        dequantized = utils.dequantize_per_tensor_int8(quantized, global_scale) # fp8
     else:
         dequantized = quantized.to(dtype=torch.float32)
 

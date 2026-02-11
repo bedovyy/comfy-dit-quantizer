@@ -9,7 +9,7 @@ import utils
 from utils import print_layer_metrics, print_layer_header
 
 QUANTIZABLE_WEIGHT_DTYPES = (torch.bfloat16, torch.float16, torch.float32)
-ALLOWED_QTYPES = {"float8_e4m3fn", "nvfp4", "mxfp8"}
+ALLOWED_QTYPES = {"float8_e4m3fn", "nvfp4", "mxfp8", "int8_tensorwise"}
 
 device = utils.get_device()
 
@@ -52,7 +52,15 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         if verbose: print(layer_name) # impl. later
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
-
+    elif qtype == "int8_tensorwise":
+        if method == "mse":
+          weight_scale = utils.scale_mse_int8(weight, n_samples=n_samples)
+        else:
+          weight_scale = utils.scale_amax_int8(weight)
+        weight_quantized = utils.quantize_per_tensor_int8(weight, weight_scale)
+        if verbose: print_layer_metrics(layer_name, weight, weight_quantized, weight_scale)
+        quantized_state_dict[key] = weight_quantized.cpu()
+        quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
     else: # fp8
         if method == "mse":
             weight_scale = utils.scale_mse_fp8(weight, n_samples=n_samples)
@@ -63,9 +71,10 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
 
-    quant_info = { "format": qtype }
     if qtype == "mxfp8":
         quant_info = { "format": qtype, "orig_dtype": "torch.bfloat16", "orig_shape": orig_shape }
+    else:
+        quant_info = { "format": qtype }
 
     if qformat == "comfy_quant":
         quantized_state_dict[f"{layer_name}.comfy_quant"] = torch.tensor(
