@@ -2,8 +2,7 @@
   "format": "comfy_quant",
   "block_names": ["net.blocks."],
   "rules": [
-    { "policy": "keep", "match": ["blocks.0", "blocks.1."] },
-    { "policy": "int8_tensorwise", "match": ["q_proj", "k_proj", "v_proj", "o_proj", "output_proj", ".mlp"] },
-    { "policy": "nvfp4", "match": [] }
+    { "policy": "keep", "match": ["blocks.0", "blocks.0", "adaln_modulation", ".mlp.layer2"] },
+    { "policy": "int8_tensorwise", "match": ["q_proj", "k_proj", "v_proj", "output_proj", ".mlp"] }
   ]
 }

@@ -96,7 +96,8 @@ def scale_mse_fp8(w, n_samples=NUM_SAMPLE_DEFAULT, ratios=(0.95, 0.975, 1.0, 1.0
     return best_scale.to(dtype=torch.float32)
 
 # TODO: Refactoring
-def scale_mse_int8(w, n_samples=NUM_SAMPLE_DEFAULT, ratios=(0.95, 0.975, 0.9875, 1.0, 1.0125, 1.025, 1.05)):
+INT8_RATIOS=tuple(0.7 + 0.02*i for i in range(16))
+def scale_mse_int8(w, n_samples=NUM_SAMPLE_DEFAULT, ratios=INT8_RATIOS):
     x = sample_flat(w, n_samples) if n_samples is not None else w.float()
     if x.numel() == 0:
         return w.new_tensor(0.0, dtype=torch.float32)
