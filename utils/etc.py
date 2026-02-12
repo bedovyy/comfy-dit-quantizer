@@ -22,16 +22,16 @@ def get_metrics(original, quantized, global_scale=None, block_scales=None):
         dequantized = ck.dequantize_per_tensor_fp8(quantized, global_scale, output_type=torch.float32) # fp8
     elif quantized.dtype == torch.int8:
         assert global_scale is not None, "int8 requires global_scale"
-        dequantized = utils.dequantize_per_tensor_int8(quantized, global_scale) # fp8
+        dequantized = utils.dequantize_per_tensor_int8(quantized, global_scale) # int8
     else:
         dequantized = quantized.to(dtype=torch.float32)
 
     amax = torch.amax(original.abs()).to(dtype=torch.float32)
     mse = torch.mean((original - dequantized).pow(2))
-    psnr = 10 * torch.log10(amax.pow(2) / (mse + 1e-10)) if mse > 0 else float('inf')
+    psnr = 10 * torch.log10(amax.pow(2) / (mse + 1e-10)) if mse > 0 else torch.tensor(torch.inf)
 
     signal_power = torch.mean(original.pow(2))
-    sqnr = 10 * torch.log10(signal_power / (mse + 1e-10)) if mse > 0 else float('inf')
+    sqnr = 10 * torch.log10(signal_power / (mse + 1e-10)) if mse > 0 else torch.tensor(torch.inf)
 
     max_err = torch.max(torch.abs(original - dequantized))
     rel_max_err = (max_err / (original.abs().amax() + 1e-8))

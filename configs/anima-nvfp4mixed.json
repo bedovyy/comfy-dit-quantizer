@@ -3,11 +3,7 @@
   "block_names": ["net.blocks."],
   "rules": [
     { "policy": "keep", "match": ["blocks.0."] },
-    { "policy": "float8_e4m3fn", "match": [
-	    "blocks.1.k_proj", "blocks.1.q_proj", "blocks.1.output_proj",
-	    "blocks.27.k_proj", "blocks.27.q_proj", "blocks.27.output_proj",
-	    "v_proj", "adaln_modulation", ".mlp"
-    ] },
+    { "policy": "float8_e4m3fn", "match": ["v_proj", "adaln_modulation", ".mlp"] },
     { "policy": "nvfp4", "match": ["k_proj", "q_proj", "output_proj"] }
   ]
 }
