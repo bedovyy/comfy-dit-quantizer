@@ -120,11 +120,36 @@ def scale_mse_int8(w, n_samples=NUM_SAMPLE_DEFAULT, ratios=INT8_RATIOS):
 
     return best_scale.to(dtype=torch.float32)
 
+
+def scale_percentile(w, max_value, percentile=0.99999):
+    return torch.quantile(w.abs().flatten().float(), percentile) / max_value
+
+def scale_percentile_int8(w, percentile=0.99999):
+    return scale_percentile(w, INT8_MAX, percentile)
+
+
+def scale_amax(w, max_value):
+    return torch.amax(w.abs()).to(dtype=torch.float32) / max_value
+
 def scale_amax_nvfp4(w):
-    return torch.amax(w.abs()).to(dtype=torch.float32) / (F8_E4M3_MAX * F4_E2M1_MAX)
+    return scale_amax(w, F8_E4M3_MAX * F4_E2M1_MAX)
 
 def scale_amax_fp8(w):
-    return torch.amax(w.abs()).to(dtype=torch.float32) / F8_E4M3_MAX
+    return scale_amax(w, F8_E4M3_MAX)
 
 def scale_amax_int8(w):
-    return torch.amax(w.abs()).to(dtype=torch.float32) / INT8_MAX
+    return scale_amax(w, INT8_MAX)
+
+
+def scale_rowwise_percentile(w, max_value, percentile=0.99999):
+    return torch.quantile(w.abs().float(), percentile, dim=1) / max_value
+
+def scale_rowwise_percentile_int8(w, percentile=0.99999):
+    return scale_rowwise_percentile(w, INT8_MAX, percentile)
+
+
+def scale_rowwise_amax(w, max_value):
+    return w.abs().amax(dim=1).to(torch.float32) / max_value
+
+def scale_rowwise_amax_int8(w):
+    return scale_rowwise_amax(w, INT8_MAX)

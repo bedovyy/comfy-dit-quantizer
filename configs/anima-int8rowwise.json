@@ -1,0 +1,8 @@
+{
+  "format": "comfy_quant",
+  "block_names": ["net.blocks."],
+  "rules": [
+    { "policy": "keep", "match": ["blocks.0.", "adaln_modulation", ".0.mlp", ".1.mlp", ".2.mlp", ".3.mlp"] },
+    { "policy": "int8_rowwise", "match": ["q_proj", "k_proj", "v_proj", "output_proj", ".mlp"] }
+  ]
+}

@@ -9,7 +9,7 @@ import utils
 from utils import print_layer_metrics, print_layer_header
 
 QUANTIZABLE_WEIGHT_DTYPES = (torch.bfloat16, torch.float16, torch.float32)
-ALLOWED_QTYPES = {"float8_e4m3fn", "nvfp4", "mxfp8", "int8_tensorwise"}
+ALLOWED_QTYPES = {"float8_e4m3fn", "float8_e5m2", "nvfp4", "mxfp8", "int8_tensorwise", "int8_rowwise"}
 
 device = utils.get_device()
 
@@ -24,7 +24,7 @@ def parse_args():
     p.add_argument("dst", help="Target safetensors path")
     p.add_argument("-d", "--downcast-fp32", choices=("fp16", "bf16"), default=None, metavar="{fp16,bf16}",
                    help="Cast fp32 tensors to the selected dtype (default: keep FP32).")
-    p.add_argument("-m", "--method", choices=("amax", "mse"), default="mse", metavar="{amax, mse}",
+    p.add_argument("-m", "--method", choices=("amax", "mse", "percentile"), default="mse", metavar="{amax, mse, percentile}",
                    help="Set calibration method (default: mse).")
     p.add_argument("-n", "--n-samples", default=None, type=int, help="num of samples for calibration method")
     p.add_argument("-q", "--quiet", action="store_true", help="no verbose.")
@@ -49,7 +49,7 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         orig_dtype = weight.dtype
         orig_shape = tuple(weight.shape)
         weight_quantized, weight_scale = ck.quantize_mxfp8(weight)
-        if verbose: print(layer_name) # impl. later
+        if verbose: print(layer_name) # TODO: impl. later
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
     elif qtype == "int8_tensorwise":
@@ -61,7 +61,20 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         if verbose: print_layer_metrics(layer_name, weight, weight_quantized, weight_scale)
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
-    else: # fp8
+    elif qtype == "int8_rowwise":
+        # currently, it doesn't support mse
+        if method == "percentile":
+            weight_scales = utils.scale_rowwise_percentile_int8(weight)
+        else:
+            weight_scales = utils.scale_rowwise_amax_int8(weight)
+        weight_quantized = utils.quantize_rowwise_int8(weight, weight_scales)
+        if verbose: print(layer_name) # TODO: impl. later
+        quantized_state_dict[key] = weight_quantized.cpu()
+        quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scales.cpu()
+    elif qtype == "float8_e5m2":
+        pass
+        # todo
+    else: # fp8 e4m3
         if method == "mse":
             weight_scale = utils.scale_mse_fp8(weight, n_samples=n_samples)
         else:
