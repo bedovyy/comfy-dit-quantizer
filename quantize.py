@@ -70,7 +70,7 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         weight_quantized = utils.quantize_rowwise_int8(weight, weight_scales)
         if verbose: print(layer_name) # TODO: impl. later
         quantized_state_dict[key] = weight_quantized.cpu()
-        quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scales.cpu()
+        quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scales.unsqueeze(-1).cpu()
     elif qtype == "float8_e5m2":
         pass
         # todo
