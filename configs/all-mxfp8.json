@@ -1,0 +1,7 @@
+{
+  "format": "comfy_quant",
+  "block_names": [""],
+  "rules": [
+    { "policy": "mxfp8", "match": [""] }
+  ]
+}

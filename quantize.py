@@ -4,11 +4,12 @@ import os
 import torch
 import comfy_kitchen as ck
 from comfy_kitchen.float_utils import F8_E4M3_MAX, F4_E2M1_MAX
-from safetensors.torch import load_file, save_file
+from safetensors.torch import safe_open, save_file
 import utils
 from utils import print_layer_metrics, print_layer_header
 
 QUANTIZABLE_WEIGHT_DTYPES = (torch.bfloat16, torch.float16, torch.float32)
+#TODO: int8s are not clear.
 ALLOWED_QTYPES = {"float8_e4m3fn", "float8_e5m2", "nvfp4", "mxfp8", "int8_tensorwise", "int8_rowwise"}
 
 device = utils.get_device()
@@ -48,10 +49,11 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
     elif qtype == "mxfp8":
         orig_dtype = weight.dtype
         orig_shape = tuple(weight.shape)
-        weight_quantized, weight_scale = ck.quantize_mxfp8(weight)
+        with ck.use_backend("triton"): # triton supports conversion from fp32
+            weight_quantized, weight_scale = ck.quantize_mxfp8(weight)
         if verbose: print(layer_name) # TODO: impl. later
         quantized_state_dict[key] = weight_quantized.cpu()
-        quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
+        quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.view(torch.uint8).cpu()
     elif qtype == "int8_tensorwise":
         if method == "mse":
           weight_scale = utils.scale_mse_int8(weight, n_samples=n_samples)
@@ -84,10 +86,16 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
 
-    if qtype == "mxfp8":
-        quant_info = { "format": qtype, "orig_dtype": "torch.bfloat16", "orig_shape": orig_shape }
+    ## The format is not clear at the moment.
+    # "format": qtype                                          - It is definitely necessary.
+    # "full_precision_matrix_mult": False                      - ComfyUI use this
+    # "block_size": 32                                         - Kijai's mxfp8 quant model has this.
+    # "orig_dtype": "torch.bfloat16", "orig_shape": orig_shape - QuantOps uses these.
+
+    if qtype == "mxfp8": # At the moment, I'll follow Kijai's.
+        quant_info = { "format": qtype, "block_size": 32, "full_precision_matrix_mult": False }
     else:
-        quant_info = { "format": qtype }
+        quant_info = { "format": qtype, "full_precision_matrix_mult": False }
 
     if qformat == "comfy_quant":
         quantized_state_dict[f"{layer_name}.comfy_quant"] = torch.tensor(
@@ -123,13 +131,18 @@ def main():
     block_names = config.get("block_names", ["block", "transformer", "layer"])
     rules = config.get("rules", [])
     
-    quantized_state_dict, quantization_layers = {}, {}
+    quantized_state_dict, quantization_layers, merged_metadata = {}, {}, {}
     for f in args.src:
         print(f)
-        state_dict = load_file(f)
-
         if not args.quiet: print_layer_header()
-    
+
+        #state_dict = load_file(f)
+        with safe_open(f, framework="pt", device="cpu") as f:
+            m = f.metadata()
+            if m:
+                merged_metadata.update(m)
+            state_dict = {k: f.get_tensor(k) for k in f.keys()}
+
         for key, tensor in state_dict.items():
             if not (any(b in key for b in block_names) and key.endswith(".weight")
                     and tensor.dtype in QUANTIZABLE_WEIGHT_DTYPES and tensor.ndim == 2):
@@ -143,11 +156,9 @@ def main():
                 quantize_weight(tensor.to(device), key, quantized_state_dict, quantization_layers, qtype, qformat, args.method, args.n_samples, verbose=not args.quiet)
 
     if not args.test:
-        metadata = (
-            {"_quantization_metadata": json.dumps({"format_version": "1.0", "layers": quantization_layers})}
-            if qformat != "comfy_quant" else None
-        )
-        save_file(quantized_state_dict, args.dst, metadata=metadata)
+        if qformat != "comfy_quant":
+            merged_metadata["_quantization_metadata"] = json.dumps({"format_version": "1.0", "layers": quantization_layers})
+        save_file(quantized_state_dict, args.dst, metadata=merged_metadata)
         total_bytes = os.path.getsize(args.dst)
         print(f"Output: {args.dst} ({round(total_bytes / (1024**3), 2)}GB)")
 

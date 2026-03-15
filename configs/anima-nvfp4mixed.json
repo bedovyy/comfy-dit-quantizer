@@ -2,8 +2,8 @@
   "format": "comfy_quant",
   "block_names": ["net.blocks."],
   "rules": [
-    { "policy": "keep", "match": ["blocks.0."] },
-    { "policy": "float8_e4m3fn", "match": ["v_proj", "adaln_modulation", ".mlp"] },
+    { "policy": "keep", "match": ["blocks.0.", "blocks.1.", "adaln_modulation"] },
+    { "policy": "float8_e4m3fn", "match": ["v_proj", ".mlp"] },
     { "policy": "nvfp4", "match": ["k_proj", "q_proj", "output_proj"] }
   ]
 }
