@@ -1,0 +1,12 @@
+{
+  "format": "comfy_quant",
+  "block_names": ["language_model"],
+  "rules": [
+    { "policy": "keep", "match": [] },
+    { "policy": "float8_e4m3fn",  "match": ["proj_qkv", "proj_z", "out_proj"] },
+    { "policy": "nvfp4",  "match": [
+	    "k_proj", "o_proj", "q_proj", "v_proj",
+	    "down_proj", "gate_proj", "up_proj"
+    ] }
+  ]
+}
