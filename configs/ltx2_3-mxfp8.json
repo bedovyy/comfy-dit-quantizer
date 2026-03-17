@@ -1,0 +1,8 @@
+{
+  "format": "comfy_quant",
+  "block_names": ["transformer_blocks"],
+  "rules": [
+    { "policy": "keep", "match": ["blocks.0.", "blocks.1.", "blocks.46.", "blocks.47."] },
+    { "policy": "mxfp8", "match": [".to_", "ff.net."] }
+  ]
+}
