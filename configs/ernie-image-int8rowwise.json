@@ -1,0 +1,7 @@
+{
+  "block_names": ["layers"],
+  "rules": [
+    { "policy": "keep", "match": ["adaLN", "self_attention.norm"] },
+    { "policy": "int8_rowwise", "match": ["mlp", "self_attention.to"] }
+  ]
+}

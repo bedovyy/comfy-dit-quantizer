@@ -1,0 +1,8 @@
+{
+  "block_names": ["layers"],
+  "rules": [
+    { "policy": "keep", "match": ["adaLN", "self_attention.norm"] },
+    { "policy": "float8_e4m3fn", "match": [] },
+    { "policy": "nvfp4", "match": ["mlp", "self_attention.to"] }
+  ]
+}
