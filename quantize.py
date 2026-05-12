@@ -6,7 +6,7 @@ import comfy_kitchen as ck
 from comfy_kitchen.float_utils import F8_E4M3_MAX, F4_E2M1_MAX
 from safetensors.torch import safe_open, save_file
 import utils
-from utils import print_layer_metrics, print_layer_header
+from utils import print_layer_metrics, print_layer_header, get_metrics
 
 QUANTIZABLE_WEIGHT_DTYPES = (torch.bfloat16, torch.float16, torch.float32)
 #TODO: int8s are not clear.
@@ -25,7 +25,7 @@ def parse_args():
     p.add_argument("dst", help="Target safetensors path")
     p.add_argument("-d", "--downcast-fp32", choices=("fp16", "bf16"), default=None, metavar="{fp16,bf16}",
                    help="Cast fp32 tensors to the selected dtype (default: keep FP32).")
-    p.add_argument("-m", "--method", choices=("amax", "mse", "percentile"), default="mse", metavar="{amax, mse, percentile}",
+    p.add_argument("-m", "--method", choices=("amax", "mse", "percentile", "4/6"), default="mse", metavar="{amax, mse, percentile, 4/6}",
                    help="Set calibration method (default: mse).")
     p.add_argument("-n", "--n-samples", default=None, type=int, help="num of samples for calibration method")
     p.add_argument("-q", "--quiet", action="store_true", help="no verbose.")
@@ -34,14 +34,25 @@ def parse_args():
 
 def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtype, qformat, method, n_samples, verbose=True):
     layer_name = key[:-7]
-    
+
     if qtype == "nvfp4":
+        use_mse_4_6 = False
+        if method == "4/6":
+            weight_scale_2 = utils.scale_amax_nvfp4(weight)
+            use_mse_4_6 = True
         if method == "mse":
             weight_scale_2 = utils.scale_mse_nvfp4(weight, n_samples=n_samples)
         else:
             weight_scale_2 = utils.scale_amax_nvfp4(weight)
-        with ck.use_backend("triton"): # triton supports conversion from fp32
-            weight_quantized, weight_scale = ck.quantize_nvfp4(weight, weight_scale_2)
+
+#        with ck.use_backend("triton"): # triton supports conversion from fp32
+        weight_quantized, weight_scale = utils.quantize_nvfp4(weight, weight_scale_2, use_mse_4_6=use_mse_4_6)
+
+        m = get_metrics(weight, weight_quantized, weight_scale_2, weight_scale)
+        if (m["rel_max_err"] > 0.1):
+            quantize_weight(weight, key, quantized_state_dict, quantization_layers, "float8_e4m3fn", qformat, method, n_samples, verbose)
+            return
+
         if verbose: print_layer_metrics(layer_name, weight, weight_quantized, weight_scale_2, weight_scale)
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
@@ -76,7 +87,7 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
     elif qtype == "float8_e5m2":
         pass
         # todo
-    else: # fp8 e4m3
+    else: # float8_e4m3fn
         if method == "mse":
             weight_scale = utils.scale_mse_fp8(weight, n_samples=n_samples)
         else:
@@ -93,9 +104,9 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
     # "orig_dtype": "torch.bfloat16", "orig_shape": orig_shape - QuantOps uses these.
 
     if qtype == "mxfp8": # At the moment, I'll follow Kijai's.
-        quant_info = { "format": qtype, "block_size": 32, "full_precision_matrix_mult": False }
+        quant_info = { "format": qtype, "block_size": 32 }
     else:
-        quant_info = { "format": qtype, "full_precision_matrix_mult": False }
+        quant_info = { "format": qtype }
 
     if qformat == "comfy_quant":
         quantized_state_dict[f"{layer_name}.comfy_quant"] = torch.tensor(
@@ -121,6 +132,17 @@ def first_matching_qtype_for_key(key, rules):
             return qtype if qtype in ALLOWED_QTYPES else None
     return None
 
+def _apply_replace_names(d: dict, replace_names: dict) -> dict:
+    result = {}
+    for key, value in d.items():
+        new_key = key
+        for old_prefix, new_prefix in replace_names.items():
+            if key.startswith(old_prefix):
+                new_key = new_prefix + key[len(old_prefix):]
+                break
+        result[new_key] = value
+    return result
+
 def main():
     args = parse_args()
     cast_to = {"bf16": torch.bfloat16, "fp16": torch.float16}.get(args.downcast_fp32, None)
@@ -130,6 +152,7 @@ def main():
     qformat = config.get("format", "1.0")
     block_names = config.get("block_names", ["block", "transformer", "layer"])
     rules = config.get("rules", [])
+    replace_names = config.get("replace_names", {})
     
     quantized_state_dict, quantization_layers, merged_metadata = {}, {}, {}
     for f in args.src:
@@ -156,6 +179,10 @@ def main():
                 quantize_weight(tensor.to(device), key, quantized_state_dict, quantization_layers, qtype, qformat, args.method, args.n_samples, verbose=not args.quiet)
 
     if not args.test:
+        if replace_names:
+            quantized_state_dict = _apply_replace_names(quantized_state_dict, replace_names)
+            if quantization_layers:
+                quantization_layers = _apply_replace_names(quantization_layers, replace_names)
         if qformat != "comfy_quant":
             merged_metadata["_quantization_metadata"] = json.dumps({"format_version": "1.0", "layers": quantization_layers})
         save_file(quantized_state_dict, args.dst, metadata=merged_metadata)

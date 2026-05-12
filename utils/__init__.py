@@ -6,5 +6,6 @@ __all__ = [
     "fixed_e", "get_device",
     "scale_mse_nvfp4", "scale_mse_fp8", "scale_mes_int8", "scale_amax_nvfp4", "scale_amax_fp8", "scale_amax_int8",
     "scale_percentile_int8", "scale_rowwise_amax_int8", "scale_rowwise_percentile_int8",
+    "quantize_nvfp4",
     "quantize_per_tensor_int8", "dequantize_per_tensor_int8", "quantize_rowwise_int8", "dequantize_rowwise_int8",
 ]

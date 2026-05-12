@@ -1,0 +1,8 @@
+{
+  "format": "comfy_quant",
+  "block_names": ["layers"],
+  "rules": [
+    { "policy": "keep", "match": [] },
+    { "policy": "float8_e4m3fn",  "match": ["mlp", "self_attn"] }
+  ]
+}
