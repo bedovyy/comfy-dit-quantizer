@@ -1,0 +1,20 @@
+{
+  "format": "non ComfyQuant",
+  "replace_names": {
+    "model.audio_tower": "audio_model",
+    "model.embed_audio": "audio_projector",
+    "model.language_model": "model",
+    "model.embed_vision": "multi_modal_projector",
+    "model.vision_tower": "vision_model"
+  },
+  "block_names": ["language_model"],
+  "rules": [
+    { "policy": "keep", "match": ["k_proj", "o_proj", "q_proj", "v_proj", "per_layer_input_gate", "per_layer_projection"] },
+    { "policy": "float8_e4m3fn",  "match": [
+	    "embed_tokens", "embed_tokens_per_layer"
+    ] },
+    { "policy": "nvfp4",  "match": [
+	    "per_layer_model_projection", "down_proj", "gate_proj", "up_proj"
+    ] }
+  ]
+}
