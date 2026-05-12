@@ -48,10 +48,10 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
 #        with ck.use_backend("triton"): # triton supports conversion from fp32
         weight_quantized, weight_scale = utils.quantize_nvfp4(weight, weight_scale_2, use_mse_4_6=use_mse_4_6)
 
-        m = get_metrics(weight, weight_quantized, weight_scale_2, weight_scale)
-        if (m["rel_max_err"] > 0.1):
-            quantize_weight(weight, key, quantized_state_dict, quantization_layers, "float8_e4m3fn", qformat, method, n_samples, verbose)
-            return
+#        m = get_metrics(weight, weight_quantized, weight_scale_2, weight_scale)
+#        if (m["rel_max_err"] > 0.1):
+#            quantize_weight(weight, key, quantized_state_dict, quantization_layers, "float8_e4m3fn", qformat, method, n_samples, verbose)
+#            return
 
         if verbose: print_layer_metrics(layer_name, weight, weight_quantized, weight_scale_2, weight_scale)
         quantized_state_dict[key] = weight_quantized.cpu()
