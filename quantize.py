@@ -7,6 +7,7 @@ from comfy_kitchen.float_utils import F8_E4M3_MAX, F4_E2M1_MAX
 from safetensors.torch import safe_open, save_file
 import utils
 from utils import print_layer_metrics, print_layer_header, get_metrics
+from utils.convrot import build_hadamard, rotate_weight
 
 QUANTIZABLE_WEIGHT_DTYPES = (torch.bfloat16, torch.float16, torch.float32)
 #TODO: int8s are not clear.
@@ -27,13 +28,22 @@ def parse_args():
                    help="Cast fp32 tensors to the selected dtype (default: keep FP32).")
     p.add_argument("-m", "--method", choices=("amax", "mse", "percentile", "4/6"), default="mse", metavar="{amax, mse, percentile, 4/6}",
                    help="Set calibration method (default: mse).")
+    p.add_argument("--convrot", action="store_true", help="apply convrot.")
     p.add_argument("-n", "--n-samples", default=None, type=int, help="num of samples for calibration method")
     p.add_argument("-q", "--quiet", action="store_true", help="no verbose.")
     p.add_argument("-t", "--test", action="store_true", help="does not save output")
     return p.parse_args()
 
 def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtype, qformat, method, n_samples, verbose=True):
+    args = parse_args()
     layer_name = key[:-7]
+
+    if args.convrot:
+        try:
+            H = build_hadamard(256, device="cpu", dtype=weight.dtype)
+            weight = rotate_weight(weight, H, group_size=256)
+        except ImportError as e:
+            print(f"ConvRot enabled but convrot module error: {e}")
 
     if qtype == "nvfp4":
         use_mse_4_6 = False
@@ -77,7 +87,8 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
     elif qtype == "int8_rowwise":
         # currently, it doesn't support mse
         if method == "percentile":
-            weight_scales = utils.scale_rowwise_percentile_int8(weight)
+            percentile = 0.999995 if args.convrot else 0.99999
+            weight_scales = utils.scale_rowwise_percentile_int8(weight, percentile=percentile)
         else:
             weight_scales = utils.scale_rowwise_amax_int8(weight)
         weight_quantized = utils.quantize_rowwise_int8(weight, weight_scales)
@@ -85,8 +96,7 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scales.unsqueeze(-1).cpu()
     elif qtype == "float8_e5m2":
-        pass
-        # todo
+        pass #TODO
     else: # float8_e4m3fn
         if method == "mse":
             weight_scale = utils.scale_mse_fp8(weight, n_samples=n_samples)
@@ -103,10 +113,10 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
     # "block_size": 32                                         - Kijai's mxfp8 quant model has this.
     # "orig_dtype": "torch.bfloat16", "orig_shape": orig_shape - QuantOps uses these.
 
-    if qtype == "mxfp8": # At the moment, I'll follow Kijai's.
-        quant_info = { "format": qtype, "block_size": 32 }
-    else:
-        quant_info = { "format": qtype }
+    quant_info = { "format": qtype }
+    if qtype == "mxfp8": quant_info["block_size"] = 32  # At the moment, I'll follow Kijai's.
+    if "rowwise" in qtype: quant_info["per_row"] = True # from BobJohnson24's.
+    if args.convrot: quant_info.update({"convrot": True, "convrot_groupsize": 256}) # from BobJohnson24's.
 
     if qformat == "comfy_quant":
         quantized_state_dict[f"{layer_name}.comfy_quant"] = torch.tensor(

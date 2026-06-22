@@ -46,3 +46,13 @@ NVFP4 requires input scale calibration.
    python add_input_scale.py CALIB_DATA.json uncalibrated_model.safetensors output.safetensors
 
 4. **Verify**: Test generation with the calibrated model.
+
+## Credits
+
+### utils/convrot.py
+
+Group-wise Hadamard rotation for INT8 quantization quality improvement.  
+Uses the Kronecker construction from ConvRot (2025) Theorem 3.3.
+
+Originally from: https://github.com/newgrit1004/ComfyUI-ZImage-Triton  
+License: MIT
