@@ -113,7 +113,7 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
     # "block_size": 32                                         - Kijai's mxfp8 quant model has this.
     # "orig_dtype": "torch.bfloat16", "orig_shape": orig_shape - QuantOps uses these.
 
-    quant_info = { "format": qtype }
+    quant_info = { "format": qtype if qtype != "int8_rowwise" else "int8_tensorwise" }
     if qtype == "mxfp8": quant_info["block_size"] = 32  # At the moment, I'll follow Kijai's.
     if "rowwise" in qtype: quant_info["per_row"] = True # from BobJohnson24's.
     if args.convrot: quant_info.update({"convrot": True, "convrot_groupsize": 256}) # from BobJohnson24's.
