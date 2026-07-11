@@ -1,6 +1,6 @@
 {
   "format": "comfy_quant",
-  "block_names": ["net.blocks."],
+  "block_names": ["net.blocks.", "diffusion_model.blocks."],
   "rules": [
     { "policy": "keep", "match": [
 	    "blocks.0.", "blocks.27.", "adaln_modulation",

@@ -1,6 +1,6 @@
 {
   "format": "comfy_quant",
-  "block_names": ["net.blocks."],
+  "block_names": ["net.blocks.", "diffusion_model.blocks."],
   "rules": [
     { "policy": "keep", "match": ["blocks.0.", "blocks.1.", "adaln_modulation", "v_proj"] },
     { "policy": "float8_e4m3fn", "match": ["q_proj", "k_proj", "output_proj", ".mlp"] },
