@@ -11,7 +11,7 @@ from utils.convrot import build_hadamard, rotate_weight
 
 QUANTIZABLE_WEIGHT_DTYPES = (torch.bfloat16, torch.float16, torch.float32)
 #TODO: int8s are not clear.
-ALLOWED_QTYPES = {"float8_e4m3fn", "float8_e5m2", "nvfp4", "mxfp8", "int8_tensorwise", "int8_rowwise"}
+ALLOWED_QTYPES = {"float8_e4m3fn", "float8_e5m2", "nvfp4", "mxfp8", "int8_tensorwise", "int8_rowwise", "convrot_w4a4"}
 
 device = utils.get_device()
 
@@ -38,13 +38,6 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
     args = parse_args()
     layer_name = key[:-7]
 
-    if args.convrot:
-        try:
-            H = build_hadamard(256, device="cpu", dtype=weight.dtype)
-            weight = rotate_weight(weight, H, group_size=256)
-        except ImportError as e:
-            print(f"ConvRot enabled but convrot module error: {e}")
-
     if qtype == "nvfp4":
         use_mse_4_6 = False
         if method == "4/6":
@@ -63,7 +56,9 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
 #            quantize_weight(weight, key, quantized_state_dict, quantization_layers, "float8_e4m3fn", qformat, method, n_samples, verbose)
 #            return
 
-        if verbose: print_layer_metrics(layer_name, weight, weight_quantized, weight_scale_2, weight_scale)
+        if verbose:
+            dequantized = ck.dequantize_nvfp4(weight_quantized, weight_scale_2, weight_scales, output_type=torch.float32)
+            print_layer_metrics(layer_name, qtype, weight, dequantized)
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale_2"] = weight_scale_2.cpu()
@@ -72,7 +67,9 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         orig_shape = tuple(weight.shape)
         with ck.use_backend("triton"): # triton supports conversion from fp32
             weight_quantized, weight_scale = ck.quantize_mxfp8(weight)
-        if verbose: print(layer_name) # TODO: impl. later
+        if verbose:
+            dequantized = ck.dequantize_mxfp8(weight_quantized, weight_scale)
+            print_layer_metrics(layer_name, qtype, weight, dequantized)
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.view(torch.uint8).cpu()
     elif qtype == "int8_tensorwise":
@@ -81,10 +78,20 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         else:
           weight_scale = utils.scale_amax_int8(weight)
         weight_quantized = utils.quantize_per_tensor_int8(weight, weight_scale)
-        if verbose: print_layer_metrics(layer_name, weight, weight_quantized, weight_scale)
+        if verbose:
+            dequantized = utils.dequantize_per_tensor_int8(weight_quantized, weight_scale)
+            print_layer_metrics(layer_name, qtype, weight, dequantized)
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
     elif qtype == "int8_rowwise":
+        if args.convrot:
+            try:
+                orig_weight = weight.clone() if verbose else None
+                H = build_hadamard(256, device="cpu", dtype=weight.dtype)
+                weight = rotate_weight(weight, H, group_size=256)
+            except ImportError as e:
+                print(f"ConvRot enabled but convrot module error: {e}")
+
         # currently, it doesn't support mse
         if method == "percentile":
             percentile = 0.999995 if args.convrot else 0.99999
@@ -92,9 +99,21 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         else:
             weight_scales = utils.scale_rowwise_amax_int8(weight)
         weight_quantized = utils.quantize_rowwise_int8(weight, weight_scales)
-        if verbose: print(layer_name) # TODO: impl. later
+        if verbose:
+            dequantized = utils.dequantize_rowwise_int8(weight_quantized, weight_scales)
+            if args.convrot and H is not None:
+                dequantized = rotate_weight(dequantized, H, group_size=256)
+                weight = orig_weight
+            print_layer_metrics(layer_name, qtype, weight, dequantized)
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scales.unsqueeze(-1).cpu()
+    elif qtype == "convrot_w4a4":
+        weight_quantized, weight_scale = ck.quantize_convrot_w4a4_weight(weight)
+        if verbose:
+            dequantized = ck.dequantize_convrot_w4a4_weight(weight_quantized, weight_scale)
+            print_layer_metrics(layer_name, qtype, weight, dequantized)
+        quantized_state_dict[key] = weight_quantized.cpu()
+        quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
     elif qtype == "float8_e5m2":
         pass #TODO
     else: # float8_e4m3fn
@@ -103,9 +122,16 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         else:
             weight_scale = utils.scale_amax_fp8(weight)
         weight_quantized = ck.quantize_per_tensor_fp8(weight, weight_scale)
-        if verbose: print_layer_metrics(layer_name, weight, weight_quantized, weight_scale)
+        if verbose:
+            dequantized = ck.dequantize_per_tensor_fp8(weight_quantized, weight_scale, output_type=torch.float32)
+            print_layer_metrics(layer_name, qtype, weight, dequantized)
+
         quantized_state_dict[key] = weight_quantized.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
+
+    if "dequantized" in locals():
+        del dequantized
+    torch.cuda.empty_cache()
 
     ## The format is not clear at the moment.
     # "format": qtype                                          - It is definitely necessary.
@@ -131,7 +157,7 @@ def store_with_optional_downcast(tensor, key, quantized_state_dict, cast_to, ver
 
         if verbose and key.endswith(".weight"):
             layer_name = key[:-7]
-            print_layer_metrics(layer_name, tensor, casted_weight)
+            print_layer_metrics(layer_name, cast_to, tensor, casted_weight)
     else:
         quantized_state_dict[key] = tensor.cpu()
 
