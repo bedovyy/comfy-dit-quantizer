@@ -43,13 +43,13 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         if method == "4/6":
             weight_scale_2 = utils.scale_amax_nvfp4(weight)
             use_mse_4_6 = True
-        if method == "mse":
+        elif method == "mse":
             weight_scale_2 = utils.scale_mse_nvfp4(weight, n_samples=n_samples)
         else:
             weight_scale_2 = utils.scale_amax_nvfp4(weight)
 
 #        with ck.use_backend("triton"): # triton supports conversion from fp32
-        weight_quantized, weight_scale = utils.quantize_nvfp4(weight, weight_scale_2, use_mse_4_6=use_mse_4_6)
+        weight_quantized, weight_scales = utils.quantize_nvfp4(weight, weight_scale_2, use_mse_4_6=use_mse_4_6)
 
 #        m = get_metrics(weight, weight_quantized, weight_scale_2, weight_scale)
 #        if (m["rel_max_err"] > 0.1):
@@ -63,8 +63,6 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
         quantized_state_dict[f"{layer_name}.weight_scale"] = weight_scale.cpu()
         quantized_state_dict[f"{layer_name}.weight_scale_2"] = weight_scale_2.cpu()
     elif qtype == "mxfp8":
-        orig_dtype = weight.dtype
-        orig_shape = tuple(weight.shape)
         with ck.use_backend("triton"): # triton supports conversion from fp32
             weight_quantized, weight_scale = ck.quantize_mxfp8(weight)
         if verbose:
@@ -137,7 +135,6 @@ def quantize_weight(weight, key, quantized_state_dict, quantization_layers, qtyp
     # "format": qtype                                          - It is definitely necessary.
     # "full_precision_matrix_mult": False                      - ComfyUI use this
     # "block_size": 32                                         - Kijai's mxfp8 quant model has this.
-    # "orig_dtype": "torch.bfloat16", "orig_shape": orig_shape - QuantOps uses these.
 
     quant_info = { "format": qtype if qtype != "int8_rowwise" else "int8_tensorwise" }
     if qtype == "mxfp8": quant_info["block_size"] = 32  # At the moment, I'll follow Kijai's.
